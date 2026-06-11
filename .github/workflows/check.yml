@@ -1,14 +1,14 @@
-name: Check Machu Picchu 3A availability
+name: Check Machu Picchu ticket availability
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "7 * * * *"
+    - cron: "*/15 * * * *"
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Check out repo
@@ -34,9 +34,10 @@ jobs:
           ALERT_TO: ${{ secrets.ALERT_TO }}
         run: npm run check
 
-      - name: Upload debug screenshot
+      - name: Upload debug screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-screenshot
+          name: debug-screenshots
           path: debug-*.png
+          if-no-files-found: warn
