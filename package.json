@@ -1,0 +1,12 @@
+{
+  "name": "tickcheck",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "check": "node check.js"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.14",
+    "playwright": "^1.45.0"
+  }
+}
