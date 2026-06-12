@@ -3,7 +3,7 @@ name: Check Machu Picchu ticket availability
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0,15,30,45 * * * *"
+  - cron: "7,22,37,52 * * * *"
 
 jobs:
   check:
