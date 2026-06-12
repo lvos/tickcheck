@@ -26,13 +26,14 @@ Do not commit SMTP credentials or other secrets to the repository.
 
 ## Running
 
-The workflow runs every 15 minutes via GitHub Actions cron:
+The workflow is designed to be triggered manually from GitHub Actions or by an external scheduler such as the Cloudflare Worker scheduler.
+Cloudflare should call the workflow dispatch API every 15 minutes:
 
 ```yaml
 */15 * * * *
 ```
 
-You can also run it manually from the GitHub Actions tab with **Run workflow**.
+The GitHub workflow intentionally keeps only `workflow_dispatch` enabled so Cloudflare is the scheduler and GitHub Actions is the runner. You can also run it manually from the GitHub Actions tab with **Run workflow**.
 
 For local testing:
 
@@ -44,10 +45,18 @@ npm run check
 
 Set `TARGET_YEAR=2026` locally if you want to force a specific July 30 travel year. Without `TARGET_YEAR`, the script uses July 30 in the current year, or next year if July 30 has already passed.
 
+Useful timeout knobs:
+
+- `PAGE_TIMEOUT_MS`, default `120000`
+- `FORM_READY_TIMEOUT_MS`, default `300000`
+- `ACTION_TIMEOUT_MS`, default `30000`
+- `PAGE_LOAD_ATTEMPTS`, default `3`
+- `PAGE_LOAD_RETRY_DELAY_MS`, default `10000`
+
 ## Email Behavior
 
 - Sends one availability email only when one or more matching route/time options are found after selecting the target route and date. The subject includes the matching shorthand routes and times, for example `Machu Picchu (3A [7:00], 2B [11:00, 12:00]) tickets available for 2026-07-30`.
 - Sends no email when the checker completes successfully and no matching availability is found.
 - Sends one failure email if the checker fails, the site blocks or redirects the browser, the form structure changes, or the script cannot complete the check. The failure subject includes all monitored shorthand routes.
 
-Each workflow run uploads debug screenshots matching `debug-*.png`.
+Each workflow run uploads debug screenshots matching `debug-*.png`; the workflow currently retains them for 7 days.

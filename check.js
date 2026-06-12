@@ -4,8 +4,11 @@ const nodemailer = require("nodemailer");
 const TARGET_URL = "https://tuboleto.cultura.pe/llaqta_machupicchu";
 const TARGET_MONTH = 6; // July, zero-based for JS Date.
 const TARGET_DAY = 30;
-const PAGE_TIMEOUT_MS = 60000;
-const ACTION_TIMEOUT_MS = 20000;
+const PAGE_TIMEOUT_MS = readPositiveIntEnv("PAGE_TIMEOUT_MS", 120000);
+const FORM_READY_TIMEOUT_MS = readPositiveIntEnv("FORM_READY_TIMEOUT_MS", 300000);
+const ACTION_TIMEOUT_MS = readPositiveIntEnv("ACTION_TIMEOUT_MS", 30000);
+const PAGE_LOAD_ATTEMPTS = readPositiveIntEnv("PAGE_LOAD_ATTEMPTS", 3);
+const PAGE_LOAD_RETRY_DELAY_MS = readPositiveIntEnv("PAGE_LOAD_RETRY_DELAY_MS", 10000);
 
 const LABELS = {
   circuit: /Selecciona\s+(?:el|tu)\s+circuito|circuito\s+que\s+deseas\s+visitar/i,
@@ -70,6 +73,18 @@ const MONTH_NAMES = [
   ["nov", "noviembre", "november"],
   ["dic", "diciembre", "dec", "december"]
 ];
+
+function readPositiveIntEnv(name, fallback) {
+  const value = process.env[name];
+  if (!value) return fallback;
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${name}: ${value}`);
+  }
+
+  return parsed;
+}
 
 function getTargetYear() {
   if (process.env.TARGET_YEAR) {
@@ -179,7 +194,7 @@ async function takeScreenshot(page, state, label) {
 
 async function getBookingForm(page) {
   const form = page.locator("app-boletos").first();
-  await form.waitFor({ state: "visible", timeout: PAGE_TIMEOUT_MS });
+  await form.waitFor({ state: "visible", timeout: FORM_READY_TIMEOUT_MS });
   return form;
 }
 
@@ -535,21 +550,42 @@ async function readVisibleAvailableTimes(page, form, state) {
 }
 
 async function loadTicketPage(page, state) {
-  setStep(state, "Loading official ticket page");
-  await page.goto(TARGET_URL, { waitUntil: "commit", timeout: PAGE_TIMEOUT_MS });
-  await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {
-    console.log("DOMContentLoaded was slow; continuing because the checker waits for the booking form directly.");
-  });
-  await page.waitForLoadState("networkidle", { timeout: PAGE_TIMEOUT_MS }).catch(() => {
-    console.log("Network did not become fully idle; continuing after DOM and form checks.");
-  });
-  await detectBlockOrUnexpectedPage(page, state);
-  const form = await getBookingForm(page);
-  await form.getByText(LABELS.circuit).first().waitFor({ state: "visible", timeout: PAGE_TIMEOUT_MS });
-  await form.getByText(LABELS.route).first().waitFor({ state: "visible", timeout: PAGE_TIMEOUT_MS });
-  await form.getByText(LABELS.date).first().waitFor({ state: "visible", timeout: PAGE_TIMEOUT_MS });
-  await takeScreenshot(page, state, "page-loaded");
-  return form;
+  let lastError;
+
+  for (let attempt = 1; attempt <= PAGE_LOAD_ATTEMPTS; attempt += 1) {
+    const attemptLabel = PAGE_LOAD_ATTEMPTS > 1 ? ` (attempt ${attempt}/${PAGE_LOAD_ATTEMPTS})` : "";
+    setStep(state, `Loading official ticket page${attemptLabel}`);
+
+    try {
+      await page.goto(TARGET_URL, { waitUntil: "commit", timeout: PAGE_TIMEOUT_MS });
+      await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {
+        console.log("DOMContentLoaded was slow; continuing because the checker waits for the booking form directly.");
+      });
+      await page.waitForLoadState("networkidle", { timeout: PAGE_TIMEOUT_MS }).catch(() => {
+        console.log("Network did not become fully idle; continuing after DOM and form checks.");
+      });
+      await detectBlockOrUnexpectedPage(page, state);
+      const form = await getBookingForm(page);
+      await form.getByText(LABELS.circuit).first().waitFor({ state: "visible", timeout: FORM_READY_TIMEOUT_MS });
+      await form.getByText(LABELS.route).first().waitFor({ state: "visible", timeout: FORM_READY_TIMEOUT_MS });
+      await form.getByText(LABELS.date).first().waitFor({ state: "visible", timeout: FORM_READY_TIMEOUT_MS });
+      await takeScreenshot(page, state, `page-loaded-attempt-${attempt}`);
+      return form;
+    } catch (error) {
+      lastError = error;
+      console.log(`Page load attempt ${attempt}/${PAGE_LOAD_ATTEMPTS} failed: ${error.message}`);
+      await takeScreenshot(page, state, `page-load-attempt-${attempt}-failed`);
+
+      if (attempt >= PAGE_LOAD_ATTEMPTS) {
+        throw lastError;
+      }
+
+      console.log(`Retrying page load in ${PAGE_LOAD_RETRY_DELAY_MS}ms`);
+      await page.waitForTimeout(PAGE_LOAD_RETRY_DELAY_MS);
+    }
+  }
+
+  throw lastError;
 }
 
 async function checkRoute(browser, route, targetDate, state) {
@@ -706,6 +742,9 @@ async function main() {
   console.log(`Target date: ${describeTargetDate(targetDate)} (${formatDateForEmail(targetDate)})`);
   console.log(`Target routes: ${TARGET_ROUTES.map((route) => route.code).join(", ")}`);
   console.log(`Official URL: ${TARGET_URL}`);
+  console.log(
+    `Timeouts: page=${PAGE_TIMEOUT_MS}ms, form=${FORM_READY_TIMEOUT_MS}ms, action=${ACTION_TIMEOUT_MS}ms, page load attempts=${PAGE_LOAD_ATTEMPTS}`
+  );
 
   try {
     setStep(state, "Launching Chromium");

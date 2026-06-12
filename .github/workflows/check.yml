@@ -2,13 +2,14 @@ name: Check Machu Picchu ticket availability
 
 on:
   workflow_dispatch:
-  schedule:
-  - cron: "7,22,37,52 * * * *"
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    concurrency:
+      group: machu-picchu-checker
+      cancel-in-progress: false
 
     steps:
       - name: Check out repo
@@ -32,6 +33,11 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           ALERT_TO: ${{ secrets.ALERT_TO }}
+          PAGE_TIMEOUT_MS: "120000"
+          FORM_READY_TIMEOUT_MS: "300000"
+          ACTION_TIMEOUT_MS: "30000"
+          PAGE_LOAD_ATTEMPTS: "3"
+          PAGE_LOAD_RETRY_DELAY_MS: "10000"
         run: npm run check
 
       - name: Upload debug screenshots
@@ -41,3 +47,4 @@ jobs:
           name: debug-screenshots
           path: debug-*.png
           if-no-files-found: warn
+          retention-days: 7
