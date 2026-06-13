@@ -3,6 +3,10 @@ name: Check Machu Picchu ticket availability
 on:
   workflow_dispatch:
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -27,18 +31,31 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run ticket check
+        id: ticket_check
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           ALERT_TO: ${{ secrets.ALERT_TO }}
+          SEND_FAILURE_EMAIL_IMMEDIATELY: "false"
           PAGE_TIMEOUT_MS: "120000"
           FORM_READY_TIMEOUT_MS: "300000"
           ACTION_TIMEOUT_MS: "30000"
           PAGE_LOAD_ATTEMPTS: "3"
           PAGE_LOAD_RETRY_DELAY_MS: "10000"
         run: npm run check
+
+      - name: Notify after three consecutive checker failures
+        if: steps.ticket_check.outcome == 'failure'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+        run: node notify-failure-streak.js
 
       - name: Upload debug screenshots
         if: always()

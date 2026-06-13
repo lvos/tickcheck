@@ -57,6 +57,7 @@ Useful timeout knobs:
 
 - Sends one availability email only when one or more matching route/time options are found after selecting the target route and date. The subject includes the matching shorthand routes and times, for example `Machu Picchu (3A [7:00], 2B [11:00, 12:00]) tickets available for 2026-07-30`.
 - Sends no email when the checker completes successfully and no matching availability is found.
-- Sends one failure email if the checker fails, the site blocks or redirects the browser, the form structure changes, or the script cannot complete the check. The failure subject includes all monitored shorthand routes.
+- In GitHub Actions, checker failures are not emailed immediately. The workflow sends one failure-streak email only when the current failed run makes 3 consecutive failed workflow attempts. The subject is `Machu Picchu checker: past 3 workflow attempts failed`.
+- When run outside GitHub Actions, `check.js` still sends an immediate failure email by default. Set `SEND_FAILURE_EMAIL_IMMEDIATELY=false` to suppress that.
 
 Each workflow run uploads debug screenshots matching `debug-*.png`; the workflow currently retains them for 7 days.

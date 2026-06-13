@@ -1,4 +1,5 @@
 const { chromium } = require("playwright");
+const fs = require("fs/promises");
 const nodemailer = require("nodemailer");
 
 const TARGET_URL = "https://tuboleto.cultura.pe/llaqta_machupicchu";
@@ -9,6 +10,8 @@ const FORM_READY_TIMEOUT_MS = readPositiveIntEnv("FORM_READY_TIMEOUT_MS", 300000
 const ACTION_TIMEOUT_MS = readPositiveIntEnv("ACTION_TIMEOUT_MS", 30000);
 const PAGE_LOAD_ATTEMPTS = readPositiveIntEnv("PAGE_LOAD_ATTEMPTS", 3);
 const PAGE_LOAD_RETRY_DELAY_MS = readPositiveIntEnv("PAGE_LOAD_RETRY_DELAY_MS", 10000);
+const FAILURE_SUBJECT_PATH = "failure-email-subject.txt";
+const FAILURE_BODY_PATH = "failure-email-body.txt";
 
 const LABELS = {
   circuit: /Selecciona\s+(?:el|tu)\s+circuito|circuito\s+que\s+deseas\s+visitar/i,
@@ -172,6 +175,12 @@ async function sendEmail(subject, body) {
   });
 
   console.log(`Email sent: ${subject}`);
+}
+
+async function writeFailureReport(subject, body) {
+  await fs.writeFile(FAILURE_SUBJECT_PATH, `${subject}\n`, "utf8");
+  await fs.writeFile(FAILURE_BODY_PATH, body, "utf8");
+  console.log(`Wrote failure report files: ${FAILURE_SUBJECT_PATH}, ${FAILURE_BODY_PATH}`);
 }
 
 async function takeScreenshot(page, state, label) {
@@ -775,9 +784,20 @@ async function main() {
   } catch (error) {
     console.error("Checker failed:", error);
 
-    await sendEmail(buildFailureSubject(), buildFailureEmail(error, state, targetDate)).catch((emailError) => {
-      console.error("Failed to send failure email:", emailError);
+    const failureSubject = buildFailureSubject();
+    const failureBody = buildFailureEmail(error, state, targetDate);
+
+    await writeFailureReport(failureSubject, failureBody).catch((writeError) => {
+      console.error("Failed to write failure report files:", writeError);
     });
+
+    if (process.env.SEND_FAILURE_EMAIL_IMMEDIATELY === "false") {
+      console.log("Immediate failure email disabled; workflow will decide whether the failure streak should alert.");
+    } else {
+      await sendEmail(failureSubject, failureBody).catch((emailError) => {
+        console.error("Failed to send failure email:", emailError);
+      });
+    }
 
     process.exitCode = 1;
   } finally {
